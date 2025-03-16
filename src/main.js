@@ -198,78 +198,119 @@ async function fetchDashboardData() {
     try {
         // Show loading state
         document.getElementById('loading').style.display = 'flex';
+        document.getElementById('error-message').style.display = 'none';
 
         // Sync all data sources
-        await Promise.all([
+        console.log('Syncing data sources...');
+        const syncResults = await Promise.allSettled([
             fetch('/.netlify/functions/sync-analytics', { method: 'POST' }),
             fetch('/.netlify/functions/sync-typeform', { method: 'POST' }),
             fetch('/.netlify/functions/sync-clickup', { method: 'POST' })
         ]);
 
-        // Fetch analytics data
-        const analyticsResponse = await fetch('/.netlify/functions/analytics-traffic');
-        const analyticsData = await analyticsResponse.json();
+        // Check for sync errors
+        syncResults.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                console.error(`Sync error for source ${index}:`, result.reason);
+            }
+        });
 
-        // Fetch Typeform data
-        const typeformResponse = await fetch('/.netlify/functions/typeform-data');
-        const typeformData = await typeformResponse.json();
+        // Fetch data from all sources
+        console.log('Fetching data from all sources...');
+        const [analyticsResponse, typeformResponse, clickupResponse] = await Promise.all([
+            fetch('/.netlify/functions/analytics-traffic'),
+            fetch('/.netlify/functions/typeform-data'),
+            fetch('/.netlify/functions/clickup-data')
+        ]);
 
-        // Fetch ClickUp data
-        const clickupResponse = await fetch('/.netlify/functions/clickup-data');
-        const clickupData = await clickupResponse.json();
+        if (!analyticsResponse.ok) throw new Error(`Analytics API error: ${analyticsResponse.status}`);
+        if (!typeformResponse.ok) throw new Error(`Typeform API error: ${typeformResponse.status}`);
+        if (!clickupResponse.ok) throw new Error(`ClickUp API error: ${clickupResponse.status}`);
+
+        const analytics = await analyticsResponse.json();
+        const typeform = await typeformResponse.json();
+        const clickup = await clickupResponse.json();
+
+        console.log('Data fetched successfully:', { analytics, typeform, clickup });
 
         // Update UI with fetched data
-        updateDashboard(analyticsData, typeformData.data, clickupData.data);
+        updateDashboard(analytics, typeform, clickup);
     } catch (error) {
         console.error('Error fetching dashboard data:', error);
-        document.getElementById('error-message').textContent = 'Error loading dashboard data. Please try again.';
+        document.getElementById('error-message').textContent = `Error: ${error.message}. Please try again.`;
         document.getElementById('error-message').style.display = 'block';
     } finally {
         document.getElementById('loading').style.display = 'none';
     }
 }
 
-function updateDashboard(responses, taskCount, traffic) {
-    // Update form responses statistics
-    document.getElementById('totalResponses').textContent = responses.length || '0'
-
-    const withCalendly = responses.filter(r => r.has_calendly_link).length
-    document.getElementById('withCalendly').textContent = withCalendly || '0'
-
-    const calendlyPercentage = responses.length > 0 
-        ? ((withCalendly / responses.length) * 100).toFixed(1) 
-        : 0
-    document.getElementById('calendlyPercentage').textContent = `(${calendlyPercentage}%)`
-
-    // Update total number of tasks
-    document.getElementById('completedDocs').textContent = taskCount || '0'
-
+function updateDashboard(analytics, typeform, clickup) {
     // Update website traffic
-    const trafficTotal = traffic.total || 0;
-    document.getElementById('websiteTraffic').textContent = trafficTotal;
-    const trafficChange = traffic.previousPeriod > 0
-        ? ((trafficTotal - traffic.previousPeriod) / traffic.previousPeriod * 100).toFixed(1)
-        : 0;
-    document.getElementById('trafficChange').textContent = `(${trafficChange}%)`;
+    document.getElementById('websiteTraffic').textContent = analytics.total || '0';
+    document.getElementById('trafficChange').textContent = analytics.previousPeriod ? 
+        `(${((analytics.total - analytics.previousPeriod) / analytics.previousPeriod * 100).toFixed(1)}%)` : 
+        '(0%)';
 
     // Update button clicks
-    const buttonClicksTotal = traffic.buttonClicks || 0;
-    document.getElementById('buttonClicks').textContent = buttonClicksTotal;
-    const clicksChange = traffic.previousButtonClicks > 0
-        ? ((buttonClicksTotal - traffic.previousButtonClicks) / traffic.previousButtonClicks * 100).toFixed(1)
-        : 0;
-    document.getElementById('clicksChange').textContent = `(${clicksChange}%)`;
+    document.getElementById('buttonClicks').textContent = analytics.buttonClicks || '0';
+    document.getElementById('clicksChange').textContent = analytics.previousButtonClicks ?
+        `(${((analytics.buttonClicks - analytics.previousButtonClicks) / analytics.previousButtonClicks * 100).toFixed(1)}%)` :
+        '(0%)';
+
+    // Update form submissions
+    document.getElementById('totalResponses').textContent = typeform.total || '0';
+
+    // Update meetings booked
+    document.getElementById('withCalendly').textContent = typeform.withCalendly || '0';
+    document.getElementById('calendlyPercentage').textContent = typeform.total ?
+        `(${((typeform.withCalendly / typeform.total) * 100).toFixed(1)}%)` :
+        '(0%)';
+
+    // Update closed tasks
+    document.getElementById('completedDocs').textContent = clickup.closed || '0';
+    document.getElementById('docsPercentage').textContent = clickup.created ?
+        `(${((clickup.closed / clickup.created) * 100).toFixed(1)}%)` :
+        '(0%)';
+
+    // Update charts
+    if (analytics.data) {
+        updateChart(trafficChart, analytics.data.map(d => ({ date: d.date, value: d.page_views })));
+        updateChart(clicksChart, analytics.data.map(d => ({ date: d.date, value: d.button_clicks })));
+    }
+
+    if (typeform.data) {
+        updateChart(submissionsChart, typeform.data.map(d => ({ date: d.date, value: d.total })));
+        updateChart(meetingsChart, typeform.data.map(d => ({ date: d.date, value: d.with_calendly })));
+    }
+
+    if (clickup.data) {
+        updateChart(closedChart, clickup.data.map(d => ({ date: d.date, value: d.closed })));
+    }
+}
+
+function updateChart(chart, data) {
+    if (!data || !Array.isArray(data)) {
+        console.warn('Invalid data for chart update:', data);
+        return;
+    }
+
+    // Sort data by date
+    data.sort((a, b) => a.date.localeCompare(b.date));
+
+    chart.data.labels = data.map(d => d.date);
+    chart.data.datasets[0].data = data.map(d => d.value);
+    chart.update();
 }
 
 // Event Listeners
-document.getElementById('dateRange').addEventListener('change', fetchDashboardData)
+document.getElementById('dateRange').addEventListener('change', fetchDashboardData);
 document.getElementById('refreshData').addEventListener('click', (e) => {
-    e.preventDefault()
-    fetchDashboardData()
-})
+    e.preventDefault();
+    fetchDashboardData();
+});
 
 // Initial load
-fetchDashboardData()
+fetchDashboardData();
 
 // Auto-refresh every 5 minutes
 setInterval(fetchDashboardData, 5 * 60 * 1000)

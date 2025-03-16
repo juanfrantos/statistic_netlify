@@ -1,0 +1,11 @@
+{
+  "name": "cursor-dashboard-functions",
+  "version": "1.0.0",
+  "description": "Netlify Functions for Cursor Dashboard",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.7",
+    "googleapis": "^133.0.0",
+    "clickup.js": "^3.0.1",
+    "@typeform/api-client": "^1.9.0"
+  }
+} 

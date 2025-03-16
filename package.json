@@ -1,18 +1,16 @@
 {
   "name": "cursor-dashboard",
   "version": "1.0.0",
-  "description": "Dashboard for tracking Typeform, ClickUp, and Google Analytics metrics",
-  "main": "src/main.js",
+  "description": "Dashboard for Cursor",
   "scripts": {
-    "start": "node server.js",
-    "build": "echo 'No build step required'"
+    "dev": "netlify dev",
+    "build": "netlify build"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.3",
-    "axios": "^1.6.7",
-    "chart.js": "^4.4.1"
+    "chart.js": "^4.4.2",
+    "dayjs": "^1.11.10"
   },
   "devDependencies": {
-    "@netlify/functions": "^2.6.0"
+    "netlify-cli": "^17.19.4"
   }
 }
